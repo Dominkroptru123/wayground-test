@@ -1,14 +1,45 @@
 (function () {
     'use strict';
 
+    // =========================
+    // ==  GLOBAL STATE       ==
+    // =========================
+
     const cachedAnswers = new Map();
     let lastProcessedQuestionId = '';
     let panelVisible = true;
     let hiddenByBlur = false;
 
-    const cleanText = (text) =>
-        text?.replace(/<p>|<\/p>/g, '').trim().replace(/\s+/g, ' ') || '';
+    // =========================
+    // ==  TEXT / KATEX FIX   ==
+    // =========================
 
+    function cleanText(textOrElement) {
+        if (!textOrElement) return '';
+
+        // Nếu là Element (HTML)
+        if (textOrElement instanceof Element) {
+            // 🎯 Ưu tiên LaTeX gốc từ KaTeX
+            const tex = textOrElement.querySelector(
+                'annotation[encoding="application/x-tex"]'
+            );
+            if (tex) return tex.textContent.trim();
+
+            return textOrElement.innerText
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        // Nếu là string HTML
+        return textOrElement
+            .replace(/<[^>]*>/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    // =========================
+    // ==  PIN OBSERVER       ==
+    // =========================
 
     function findGamePinOnce() {
         const pinRegex = /\b\d{4}(?:[\s\-–—]?\d{2,4})?\b/;
@@ -54,8 +85,13 @@
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
+    // =========================
+    // ==   FETCH ANSWERS     ==
+    // =========================
+
     async function fetchAndCacheAnswers(pin, statusDisplay) {
         statusDisplay.textContent = '🌀 Đang tải đáp án...';
+
         try {
             const controller = new AbortController();
             setTimeout(() => controller.abort(), 8000);
@@ -73,13 +109,21 @@
             data.answers.forEach(item => {
                 if (!item?._id) return;
 
+                // MSQ
                 if (item.type === 'MSQ' && Array.isArray(item.answers)) {
-                    const arr = item.answers
-                        .map(a => cleanText(a.text))
-                        .filter(Boolean);
+                    const arr = item.answers.map(a => {
+                        const temp = document.createElement('div');
+                        temp.innerHTML = a.text;
+                        return cleanText(temp);
+                    }).filter(Boolean);
+
                     if (arr.length) cachedAnswers.set(item._id, arr);
-                } else {
-                    const ans = cleanText(item.answers?.[0]?.text);
+                } 
+                // Single / Fill
+                else {
+                    const temp = document.createElement('div');
+                    temp.innerHTML = item.answers?.[0]?.text || '';
+                    const ans = cleanText(temp);
                     if (ans) cachedAnswers.set(item._id, ans);
                 }
             });
@@ -92,6 +136,9 @@
         }
     }
 
+    // =========================
+    // ==  QUESTION OBSERVE  ==
+    // =========================
 
     function getCurrentQuestionData() {
         const q = document.querySelector('[data-quesid]');
@@ -133,21 +180,49 @@
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
+    // =========================
+    // ==        UI          ==
+    // =========================
+
     function initialize() {
         if (document.getElementById('solver-panel')) return;
 
         document.head.insertAdjacentHTML('beforeend', `
 <style>
 #solver-panel{
- position:fixed;bottom:20px;right:20px;z-index:999999;
- padding:12px 14px;background:rgba(26,27,30,.88);
- border-radius:14px;color:white;min-width:220px;
- font-family:system-ui
+ position:fixed;
+ bottom:20px;
+ right:20px;
+ z-index:999999;
+ padding:12px 14px;
+ background:rgba(26,27,30,.88);
+ border-radius:14px;
+ color:white;
+ min-width:220px;
+ font-family:system-ui;
 }
-#solver-status{text-align:center;font-weight:600;margin-bottom:8px}
-#pin-container{display:flex;gap:6px}
-#pin-input{flex:1;padding:6px;border-radius:8px;border:none;text-align:center}
-#load-btn{padding:0 14px;border:none;border-radius:8px;cursor:pointer}
+#solver-status{
+ text-align:center;
+ font-weight:600;
+ margin-bottom:8px;
+}
+#pin-container{
+ display:flex;
+ gap:6px;
+}
+#pin-input{
+ flex:1;
+ padding:6px;
+ border-radius:8px;
+ border:none;
+ text-align:center;
+}
+#load-btn{
+ padding:0 14px;
+ border:none;
+ border-radius:8px;
+ cursor:pointer;
+}
 #solver-answer{
  margin-top:8px;
  font-size:14px;
@@ -190,24 +265,32 @@
 
         loadBtn.onclick = handleLoad;
         pinInput.onkeydown = e => e.key === 'Enter' && handleLoad();
+
+        // 🔍 Auto PIN
         observePin(pin => {
             pinInput.value = pin;
             statusDisplay.textContent = '✅ Đã tìm thấy Room Code';
             statusDisplay.style.color = '#50fa7b';
             setTimeout(handleLoad, 300);
         });
+
+        // ⌨️ Toggle panel bằng phím X
         document.addEventListener('keydown', e => {
             if (e.key.toLowerCase() === 'x') {
                 panelVisible = !panelVisible;
                 panel.style.display = panelVisible ? 'block' : 'none';
             }
         });
+
+        // 👀 Ẩn khi mất focus
         window.addEventListener('blur', () => {
             if (panelVisible) {
                 panel.style.display = 'none';
                 hiddenByBlur = true;
             }
         });
+
+        // 👁️ Hiện lại khi focus
         window.addEventListener('focus', () => {
             if (panelVisible && hiddenByBlur) {
                 panel.style.display = 'block';
