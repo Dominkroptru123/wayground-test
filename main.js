@@ -17,9 +17,7 @@
     function cleanText(textOrElement) {
         if (!textOrElement) return '';
 
-        // Nếu là Element (HTML)
         if (textOrElement instanceof Element) {
-            // 🎯 Ưu tiên LaTeX gốc từ KaTeX
             const tex = textOrElement.querySelector(
                 'annotation[encoding="application/x-tex"]'
             );
@@ -30,7 +28,6 @@
                 .trim();
         }
 
-        // Nếu là string HTML
         return textOrElement
             .replace(/<[^>]*>/g, '')
             .replace(/\s+/g, ' ')
@@ -38,51 +35,60 @@
     }
 
     // =========================
-    // ==  PIN OBSERVER       ==
+    // ==  PIN OBSERVER FIX   ==
     // =========================
 
-    function findGamePinOnce() {
-        const pinRegex = /\b\d{4}(?:[\s\-–—]?\d{2,4})?\b/;
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-        let node;
-
-        while (node = walker.nextNode()) {
-            const match = node.nodeValue.match(pinRegex);
-            if (match && node.parentElement?.offsetParent !== null) {
-                const pin = match[0].replace(/\D/g, '');
-                if (pin.length >= 4 && pin.length <= 8) return pin;
-            }
-        }
-        return null;
-    }
-
     function observePin(onFound) {
-        const pinRegex = /\b\d{4}(?:[\s\-–—]?\d{2,4})?\b/;
+        const pinRegex = /\b\d{3}\s?\d{3}\b|\b\d{4,8}\b/;
 
-        const initialPin = findGamePinOnce();
-        if (initialPin) {
-            onFound(initialPin);
-            return;
-        }
+        const scan = root => {
+            const walker = document.createTreeWalker(
+                root,
+                NodeFilter.SHOW_TEXT,
+                null
+            );
+            let node;
+            while (node = walker.nextNode()) {
+                const match = node.nodeValue.match(pinRegex);
+                if (match) {
+                    const pin = match[0].replace(/\D/g, '');
+                    if (pin.length >= 4 && pin.length <= 8) {
+                        onFound(pin);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+
+        // scan lần đầu
+        if (scan(document.body)) return;
 
         const observer = new MutationObserver(mutations => {
             for (const m of mutations) {
-                for (const node of m.addedNodes) {
-                    if (node.nodeType !== Node.TEXT_NODE) continue;
-                    const match = node.nodeValue.match(pinRegex);
-                    if (!match) continue;
-
-                    const pin = match[0].replace(/\D/g, '');
-                    if (pin.length >= 4 && pin.length <= 8) {
+                if (m.type === 'characterData') {
+                    if (scan(m.target.parentNode)) {
                         observer.disconnect();
-                        onFound(pin);
                         return;
+                    }
+                }
+
+                for (const node of m.addedNodes) {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        if (scan(node)) {
+                            observer.disconnect();
+                            return;
+                        }
                     }
                 }
             }
         });
 
-        observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
     }
 
     // =========================
@@ -106,10 +112,11 @@
             const { data } = await res.json();
             if (!data?.answers) throw new Error('API không hợp lệ');
 
+            cachedAnswers.clear();
+
             data.answers.forEach(item => {
                 if (!item?._id) return;
 
-                // MSQ
                 if (item.type === 'MSQ' && Array.isArray(item.answers)) {
                     const arr = item.answers.map(a => {
                         const temp = document.createElement('div');
@@ -118,9 +125,7 @@
                     }).filter(Boolean);
 
                     if (arr.length) cachedAnswers.set(item._id, arr);
-                } 
-                // Single / Fill
-                else {
+                } else {
                     const temp = document.createElement('div');
                     temp.innerHTML = item.answers?.[0]?.text || '';
                     const ans = cleanText(temp);
@@ -266,7 +271,7 @@
         loadBtn.onclick = handleLoad;
         pinInput.onkeydown = e => e.key === 'Enter' && handleLoad();
 
-        // 🔍 Auto PIN
+        // 🔍 AUTO PIN (FIX)
         observePin(pin => {
             pinInput.value = pin;
             statusDisplay.textContent = '✅ Đã tìm thấy Room Code';
@@ -274,7 +279,7 @@
             setTimeout(handleLoad, 300);
         });
 
-        // ⌨️ Toggle panel bằng phím X
+        // ⌨️ Toggle panel = X
         document.addEventListener('keydown', e => {
             if (e.key.toLowerCase() === 'x') {
                 panelVisible = !panelVisible;
@@ -282,7 +287,6 @@
             }
         });
 
-        // 👀 Ẩn khi mất focus
         window.addEventListener('blur', () => {
             if (panelVisible) {
                 panel.style.display = 'none';
@@ -290,7 +294,6 @@
             }
         });
 
-        // 👁️ Hiện lại khi focus
         window.addEventListener('focus', () => {
             if (panelVisible && hiddenByBlur) {
                 panel.style.display = 'block';
