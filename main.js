@@ -61,7 +61,6 @@
             return false;
         };
 
-        // scan lần đầu
         if (scan(document.body)) return;
 
         const observer = new MutationObserver(mutations => {
@@ -72,7 +71,6 @@
                         return;
                     }
                 }
-
                 for (const node of m.addedNodes) {
                     if (node.nodeType === Node.ELEMENT_NODE) {
                         if (scan(node)) {
@@ -271,7 +269,6 @@
         loadBtn.onclick = handleLoad;
         pinInput.onkeydown = e => e.key === 'Enter' && handleLoad();
 
-        // 🔍 AUTO PIN (FIX)
         observePin(pin => {
             pinInput.value = pin;
             statusDisplay.textContent = '✅ Đã tìm thấy Room Code';
@@ -279,14 +276,39 @@
             setTimeout(handleLoad, 300);
         });
 
-        // ⌨️ Toggle panel = X
-        document.addEventListener('keydown', e => {
-            if (e.key.toLowerCase() === 'x') {
+        // =========================
+        // ==  SWIPE TO TOGGLE   ==
+        // =========================
+
+        let startX = 0;
+        let startY = 0;
+        let tracking = false;
+
+        document.addEventListener('touchstart', e => {
+            const t = e.touches[0];
+            startX = t.clientX;
+            startY = t.clientY;
+
+            // chỉ nhận vuốt từ mép phải
+            tracking = startX > window.innerWidth - 30;
+        });
+
+        document.addEventListener('touchend', e => {
+            if (!tracking) return;
+
+            const t = e.changedTouches[0];
+            const dx = t.clientX - startX;
+            const dy = Math.abs(t.clientY - startY);
+
+            if (dx < -80 && dy < 60) {
                 panelVisible = !panelVisible;
                 panel.style.display = panelVisible ? 'block' : 'none';
             }
+
+            tracking = false;
         });
 
+        // auto hide khi chuyển app
         window.addEventListener('blur', () => {
             if (panelVisible) {
                 panel.style.display = 'none';
